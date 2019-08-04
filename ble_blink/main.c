@@ -18,7 +18,7 @@ const int LED_RGB[] = {17, 19, 18};
 
 const int CENTRAL_LINK_COUNT = 0;    /**< Number of central links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
-const int PERIPHERAL_LINK_COUNT = 0; /**< Number of peripheral links used by the application. When changing this number
+const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
 
 #define DEVICE_NAME "Ferris_PRO"                /**< Name of device. Will be included in the advertising data. */
@@ -40,6 +40,22 @@ const int PERIPHERAL_LINK_COUNT = 0; /**< Number of peripheral links used by the
 static ble_uuid_t m_adv_uuids[] = {
     {BLE_UUID_DEVICE_INFORMATION_SERVICE, BLE_UUID_TYPE_BLE}}; /**< Universally unique service identifiers. */
 
+volatile uint32_t last_error_code = 0;
+
+void check_error(volatile uint32_t err_code) {
+    if (err_code) {
+        last_error_code = err_code;
+        for (int i = 0; i < 3; i++) {
+            nrf_gpio_pin_set(LED_RGB[i]);
+        }
+        nrf_gpio_pin_clear(LED_R);
+
+        for (;;) {
+            nrf_gpio_pin_toggle(LED_R);
+        }
+    }
+}
+
 /**@brief Function for handling advertising events.
  *
  * @details This function will be called for advertising events which are passed to the application.
@@ -50,7 +66,7 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt) {
     switch (ble_adv_evt) {
     case BLE_ADV_EVT_FAST:
         // NRF_LOG_INFO("Fast advertising\r\n");
-        nrf_gpio_pin_toggle(LED_G);
+        nrf_gpio_pin_toggle(LED_B);
         break;
     default:
         break;
@@ -79,7 +95,7 @@ static void advertising_init(void) {
     options.ble_adv_fast_timeout  = APP_ADV_TIMEOUT_IN_SECONDS;
 
     err_code = ble_advertising_init(&advdata, NULL, &options, on_adv_evt, NULL);
-    APP_ERROR_CHECK(err_code);
+    check_error(err_code);
 }
 
 /**@brief Function for initializing the BLE stack.
@@ -96,26 +112,34 @@ static void ble_stack_init(void) {
 
     ble_enable_params_t ble_enable_params;
     err_code = softdevice_enable_get_default_config(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT, &ble_enable_params);
-    APP_ERROR_CHECK(err_code);
+    check_error(err_code);
 
     // Check the ram settings against the used number of links
     CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT);
 
     // Enable BLE stack.
     err_code = softdevice_enable(&ble_enable_params);
-    APP_ERROR_CHECK(err_code);
+    check_error(err_code);
+}
+
+/**@brief Function for the Power manager.
+ */
+static void power_manage(void) {
+    uint32_t err_code = sd_app_evt_wait();
+
+    check_error(err_code);
 }
 
 int main(void) {
-    // init LEDS
+    uint32_t err_code = 0;
 
+    // init LEDS
     for (int i = 0; i < 3; i++) {
         nrf_gpio_cfg_output(LED_RGB[i]);
     }
     for (int i = 0; i < 3; i++) {
         nrf_gpio_pin_set(LED_RGB[i]);
     }
-
     // uint32_t err_code;
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, false);
 
@@ -123,9 +147,14 @@ int main(void) {
     ble_stack_init();
     advertising_init();
 
-    while (true) {
+    nrf_gpio_pin_toggle(LED_G);
 
+    err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
+    check_error(err_code);
+
+    while (true) {
         nrf_delay_ms(500);
         nrf_gpio_pin_toggle(LED_G);
+        power_manage();
     }
 }
