@@ -6,7 +6,7 @@ SDK_ROOT := ../sdk/nRF5_SDK_12.3.0_d7731ad
 PROJ_DIR := .
 
 $(OUTPUT_DIRECTORY)/nrf51422_xxac.out: \
-  LINKER_SCRIPT  := sensor_pro.ld
+  LINKER_SCRIPT  := sensor_pro_softdevice.ld
 
 -include sources.mk
 -include objects.mk
@@ -62,4 +62,4 @@ flash_softdevice:
 	nrfjprog --reset -f nrf51
 
 erase:
-	nrfjprog --eraseall -f nrf52
+	nrfjprog --eraseall -f nrf51
