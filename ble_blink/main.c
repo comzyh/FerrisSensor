@@ -37,6 +37,12 @@ const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the
 #define APP_TIMER_PRESCALER 0     /**< Value of the RTC1 PRESCALER register. */
 #define APP_TIMER_OP_QUEUE_SIZE 4 /**< Size of timer operation queues. */
 
+#define MIN_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (0.1 seconds). */
+#define MAX_CONN_INTERVAL               MSEC_TO_UNITS(200, UNIT_1_25_MS)            /**< Maximum acceptable connection interval (0.2 second). */
+#define SLAVE_LATENCY                   0                                           /**< Slave latency. */
+#define CONN_SUP_TIMEOUT                MSEC_TO_UNITS(4000, UNIT_10_MS)             /**< Connection supervisory timeout (4 seconds). */
+
+
 static ble_uuid_t m_adv_uuids[] = {
     {BLE_UUID_DEVICE_INFORMATION_SERVICE, BLE_UUID_TYPE_BLE}}; /**< Universally unique service identifiers. */
 
@@ -121,6 +127,38 @@ static void ble_stack_init(void) {
     err_code = softdevice_enable(&ble_enable_params);
     check_error(err_code);
 }
+/**@brief Function for the GAP initialization.
+ *
+ * @details This function sets up all the necessary GAP (Generic Access Profile) parameters of the
+ *          device including the device name, appearance, and the preferred connection parameters.
+ */
+static void gap_params_init(void)
+{
+    uint32_t                err_code;
+    ble_gap_conn_params_t   gap_conn_params;
+    ble_gap_conn_sec_mode_t sec_mode;
+
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
+
+    err_code = sd_ble_gap_device_name_set(&sec_mode,
+                                          (const uint8_t *)DEVICE_NAME,
+                                          strlen(DEVICE_NAME));
+    check_error(err_code);
+
+    /* YOUR_JOB: Use an appearance value matching the application's use case.
+       err_code = sd_ble_gap_appearance_set(BLE_APPEARANCE_);
+       APP_ERROR_CHECK(err_code); */
+
+    memset(&gap_conn_params, 0, sizeof(gap_conn_params));
+
+    gap_conn_params.min_conn_interval = MIN_CONN_INTERVAL;
+    gap_conn_params.max_conn_interval = MAX_CONN_INTERVAL;
+    gap_conn_params.slave_latency     = SLAVE_LATENCY;
+    gap_conn_params.conn_sup_timeout  = CONN_SUP_TIMEOUT;
+
+    err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
+    check_error(err_code);
+}
 
 /**@brief Function for the Power manager.
  */
@@ -145,6 +183,7 @@ int main(void) {
 
     // Initialize SoftDevice.
     ble_stack_init();
+    gap_params_init(); 
     advertising_init();
 
     nrf_gpio_pin_toggle(LED_G);
@@ -153,7 +192,6 @@ int main(void) {
     check_error(err_code);
 
     while (true) {
-        nrf_delay_ms(500);
         nrf_gpio_pin_toggle(LED_G);
         power_manage();
     }
