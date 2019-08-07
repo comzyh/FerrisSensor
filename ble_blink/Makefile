@@ -34,19 +34,6 @@ TEMPLATE_PATH := $(SDK_ROOT)/components/toolchain/gcc
 
 include $(TEMPLATE_PATH)/Makefile.common
 
-# # use system gcc tools
-# GNU_INSTALL_ROOT := /usr
-# GNU_PREFIX := arm-none-eabi
-# CC      := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-gcc"
-# CXX     := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-c++"
-# AS      := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-as"
-# AR      := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-ar" -r
-# LD      := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-ld"
-# NM      := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-nm"
-# OBJDUMP := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-objdump"
-# OBJCOPY := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-objcopy"
-# SIZE    := "$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-size"
-
 $(foreach target, $(TARGETS), $(call define_target, $(target)))
 
 # Flash the program

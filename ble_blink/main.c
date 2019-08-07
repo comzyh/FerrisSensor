@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "app_error.h"
 #include "app_timer.h"
 #include "ble_advdata.h"
 #include "ble_advertising.h"
@@ -11,6 +12,7 @@
 #include "ble_srv_common.h"
 
 #include "nrf_delay.h"
+#include "nrf_drv_adc.h"
 #include "nrf_gpio.h"
 #include "softdevice_handler.h"
 
@@ -28,6 +30,7 @@ const int CENTRAL_LINK_COUNT = 0;    /**< Number of central links used by the ap
                                         remember to adjust the RAM settings*/
 const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
+#define ADC_BUFFER_SIZE 10
 
 #define APP_FEATURE_NOT_SUPPORTED BLE_GATT_STATUS_ATTERR_APP_BEGIN + 2 /**< Reply when unsupported features are requested. */
 
@@ -58,9 +61,10 @@ const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the
 static ble_uuid_t m_adv_uuids[] = {
     {BLE_UUID_DEVICE_INFORMATION_SERVICE, BLE_UUID_TYPE_BLE}}; /**< Universally unique service identifiers. */
 
-volatile uint32_t last_error_code = 0;
+static uint32_t last_error_code;
 static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID; /**< Handle of the current connection. */
 static ble_bas_t m_bas;
+static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
 
 void check_error(volatile uint32_t err_code) {
   if (err_code) {
@@ -97,6 +101,7 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt) {
  */
 static void advertising_init(void) {
   uint32_t err_code;
+
   ble_advdata_t advdata;
   ble_adv_modes_config_t options;
 
@@ -120,7 +125,6 @@ static void advertising_init(void) {
 
 static void on_ble_evt(ble_evt_t *p_ble_evt) {
   uint32_t err_code = NRF_SUCCESS;
-  nrf_gpio_pin_toggle(LED_B);
 
   switch (p_ble_evt->header.evt_id) {
   case BLE_GAP_EVT_DISCONNECTED:
@@ -274,57 +278,9 @@ static void gap_params_init(void) {
   check_error(err_code);
 }
 
-/**@brief Function for handling the YYY Service events.
- * YOUR_JOB implement a service handler function depending on the event the service you are using can generate
- *
- * @details This function will be called for all YY Service events which are passed to
- *          the application.
- *
- * @param[in]   p_yy_service   YY Service structure.
- * @param[in]   p_evt          Event received from the YY Service.
- *
- *
-   static void on_yys_evt(ble_yy_service_t     * p_yy_service,
-                       ble_yy_service_evt_t * p_evt)
-   {
-    switch (p_evt->evt_type)
-    {
-        case BLE_YY_NAME_EVT_WRITE:
-            APPL_LOG("[APPL]: charact written with value %s. \r\n", p_evt->params.char_xx.value.p_str);
-            break;
-
-        default:
-            // No implementation needed.
-            break;
-    }
-   }*/
-
 /**@brief Function for initializing services that will be used by the application.
  */
 static void services_init(void) {
-  /* YOUR_JOB: Add code to initialize the services used by the application.
-       uint32_t                           err_code;
-       ble_xxs_init_t                     xxs_init;
-       ble_yys_init_t                     yys_init;
-
-       // Initialize XXX Service.
-       memset(&xxs_init, 0, sizeof(xxs_init));
-
-       xxs_init.evt_handler                = NULL;
-       xxs_init.is_xxx_notify_supported    = true;
-       xxs_init.ble_xx_initial_value.level = 100;
-
-       err_code = ble_bas_init(&m_xxs, &xxs_init);
-       APP_ERROR_CHECK(err_code);
-
-       // Initialize YYY Service.
-       memset(&yys_init, 0, sizeof(yys_init));
-       yys_init.evt_handler                  = on_yys_evt;
-       yys_init.ble_yy_initial_value.counter = 0;
-
-       err_code = ble_yy_service_init(&yys_init, &yy_init);
-       APP_ERROR_CHECK(err_code);
-     */
   uint32_t err_code;
 
   ble_bas_init_t bas_init;
@@ -395,8 +351,38 @@ static void conn_params_init(void) {
  */
 static void power_manage(void) {
   uint32_t err_code = sd_app_evt_wait();
-
   check_error(err_code);
+}
+
+/**
+ * @brief ADC interrupt handler.
+ */
+static void adc_event_handler(nrf_drv_adc_evt_t const *p_event) {
+  if (p_event->type == NRF_DRV_ADC_EVT_DONE) {
+
+    int sum = 0;
+    for (int i = 0; i < p_event->data.done.size; i++) {
+      sum += p_event->data.done.p_buffer[i];
+    }
+    ble_bas_battery_level_update(&m_bas, sum / p_event->data.done.size);
+  }
+}
+
+/**
+ * @brief ADC initialization.
+ */
+static void adc_config(void) {
+  ret_code_t ret_code;
+  nrf_drv_adc_config_t config = NRF_DRV_ADC_DEFAULT_CONFIG;
+  static nrf_drv_adc_channel_t adc_channel_config = NRF_DRV_ADC_DEFAULT_CHANNEL(NRF_ADC_CONFIG_INPUT_DISABLED); //Get default ADC channel configuration
+  adc_channel_config.config.config.resolution = NRF_ADC_CONFIG_RES_8BIT;
+  adc_channel_config.config.config.input = NRF_ADC_CONFIG_SCALING_SUPPLY_ONE_THIRD;
+  adc_channel_config.config.config.reference = NRF_ADC_CONFIG_REF_VBG;
+
+  ret_code = nrf_drv_adc_init(&config, adc_event_handler);
+  check_error(ret_code);
+
+  nrf_drv_adc_channel_enable(&adc_channel_config);
 }
 
 int main(void) {
@@ -409,6 +395,9 @@ int main(void) {
   for (int i = 0; i < 3; i++) {
     nrf_gpio_pin_set(LED_RGB[i]);
   }
+  // enable adc
+  adc_config();
+
   err_code = NRF_LOG_INIT(NULL);
   check_error(err_code);
 
@@ -421,7 +410,7 @@ int main(void) {
   err_code = sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
   check_error(err_code);
 
-
+  // init gap_params
   gap_params_init();
   advertising_init();
   services_init();
@@ -432,8 +421,21 @@ int main(void) {
   err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
   check_error(err_code);
 
+  adc_buffer[0] = 1;
+
+  // Battery ADC
+  err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
+  check_error(err_code);
+
+  for (uint16_t i = 0; i < ADC_BUFFER_SIZE; i++) {
+    nrf_drv_adc_sample();
+    __SEV();
+    __WFE();
+    __WFE();
+  }
+  nrf_gpio_pin_set(LED_B);
+
   while (true) {
-    // nrf_gpio_pin_toggle(LED_G);
     power_manage();
   }
 }
