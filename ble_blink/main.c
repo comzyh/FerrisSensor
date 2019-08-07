@@ -204,15 +204,17 @@ static void ble_evt_dispatch(ble_evt_t *p_ble_evt) {
   /** The Connection state module has to be fed BLE events in order to function correctly
      * Remember to call ble_conn_state_on_ble_evt before calling any ble_conns_state_* functions. */
   ble_conn_state_on_ble_evt(p_ble_evt);
-  // pm_on_ble_evt(p_ble_evt);
+
   ble_conn_params_on_ble_evt(p_ble_evt);
-  // bsp_btn_ble_on_ble_evt(p_ble_evt);
+
   on_ble_evt(p_ble_evt);
   ble_advertising_on_ble_evt(p_ble_evt);
   /*YOUR_JOB add calls to _on_ble_evt functions from each service your application is using
        ble_xxs_on_ble_evt(&m_xxs, p_ble_evt);
        ble_yys_on_ble_evt(&m_yys, p_ble_evt);
      */
+  // battery
+  ble_bas_on_ble_evt(&m_bas, p_ble_evt);
 }
 
 /**@brief Function for initializing the BLE stack.
@@ -240,7 +242,7 @@ static void ble_stack_init(void) {
 
   // Register with the SoftDevice handler module for BLE events.
   err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch);
-  APP_ERROR_CHECK(err_code);
+  check_error(err_code);
 }
 /**@brief Function for the GAP initialization.
  *
@@ -326,10 +328,17 @@ static void services_init(void) {
   uint32_t err_code;
 
   ble_bas_init_t bas_init;
-
   memset(&bas_init, 0, sizeof(bas_init));
+
+  BLE_GAP_CONN_SEC_MODE_SET_OPEN(&bas_init.battery_level_char_attr_md.cccd_write_perm);
+  BLE_GAP_CONN_SEC_MODE_SET_OPEN(&bas_init.battery_level_char_attr_md.read_perm);
+  BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&bas_init.battery_level_char_attr_md.write_perm);
+  BLE_GAP_CONN_SEC_MODE_SET_OPEN(&bas_init.battery_level_report_read_perm);
+
   bas_init.support_notification = false;
-  bas_init.initial_batt_level = 128;
+  bas_init.initial_batt_level = 50;
+  bas_init.p_report_ref = NULL;
+  bas_init.evt_handler = NULL;
 
   err_code = ble_bas_init(&m_bas, &bas_init);
   check_error(err_code);
@@ -407,6 +416,12 @@ int main(void) {
 
   // Initialize SoftDevice.
   ble_stack_init();
+
+  // Enable internal DCDC to reduce power consumption
+  err_code = sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+  check_error(err_code);
+
+
   gap_params_init();
   advertising_init();
   services_init();
