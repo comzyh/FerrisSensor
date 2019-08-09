@@ -2,7 +2,9 @@
 #include <stdint.h>
 
 #include "app_error.h"
+#include "app_scheduler.h"
 #include "app_timer.h"
+#include "app_util_platform.h"
 #include "ble_advdata.h"
 #include "ble_advertising.h"
 #include "ble_bas.h"
@@ -10,11 +12,12 @@
 #include "ble_conn_state.h"
 #include "ble_hci.h"
 #include "ble_srv_common.h"
+#include "softdevice_handler.h"
 
 #include "nrf_delay.h"
 #include "nrf_drv_adc.h"
+#include "nrf_drv_twi.h"
 #include "nrf_gpio.h"
-#include "softdevice_handler.h"
 
 #define NRF_LOG_MODULE_NAME "FerrisApp"
 #include "nrf_log.h"
@@ -30,14 +33,23 @@ const int CENTRAL_LINK_COUNT = 0;    /**< Number of central links used by the ap
                                         remember to adjust the RAM settings*/
 const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
+
+// TWI config
+#define TWI_INSTANCE_ID 1 // we are using TWI1
+const int TWI_SCL_PIN = 10;
+const int TWI_SDA_PIN = 9;
+
 #define ADC_BUFFER_SIZE 10
 
 #define APP_FEATURE_NOT_SUPPORTED BLE_GATT_STATUS_ATTERR_APP_BEGIN + 2 /**< Reply when unsupported features are requested. */
 
 #define DEVICE_NAME "Ferris V0.1"               /**< Name of device. Will be included in the advertising data. */
 #define MANUFACTURER_NAME "NordicSemiconductor" /**< Manufacturer. Will be passed to Device Information Service. */
-#define APP_ADV_INTERVAL 300                    /**< The advertising interval (in units of 0.625 ms. This value corresponds to 187.5 ms). */
-#define APP_ADV_TIMEOUT_IN_SECONDS 180          /**< The advertising timeout in units of seconds. */
+
+#define APP_ADV_FAST_INTERVAL 80   /**< The advertising interval (in units of 0.625 ms. This value corresponds to 50 ms). */
+#define APP_ADV_SLOW_INTERVAL 3200 /**< Slow advertising interval (in units of 0.625 ms. This value corresponds to 2 seconds). */
+#define APP_ADV_FAST_TIMEOUT 30    /**< The duration of the fast advertising period (in seconds). */
+#define APP_ADV_SLOW_TIMEOUT 180   /**< The advertising timeout in units of seconds. */
 
 // Low frequency clock source to be used by the SoftDevice
 #define NRF_CLOCK_LFCLKSRC                                            \
@@ -64,6 +76,7 @@ static ble_uuid_t m_adv_uuids[] = {
 static uint32_t last_error_code;
 static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID; /**< Handle of the current connection. */
 static ble_bas_t m_bas;
+static const nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
 static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
 
 void check_error(volatile uint32_t err_code) {
@@ -92,6 +105,9 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt) {
     // NRF_LOG_INFO("Fast advertising\r\n");
     // nrf_gpio_pin_toggle(LED_B);
     break;
+  case BLE_ADV_EVT_IDLE:
+    check_error(10);
+    break; // BLE_ADV_EVT_IDLE
   default:
     break;
   }
@@ -116,8 +132,11 @@ static void advertising_init(void) {
 
   memset(&options, 0, sizeof(options));
   options.ble_adv_fast_enabled = true;
-  options.ble_adv_fast_interval = APP_ADV_INTERVAL;
-  options.ble_adv_fast_timeout = APP_ADV_TIMEOUT_IN_SECONDS;
+  options.ble_adv_fast_interval = APP_ADV_FAST_INTERVAL;
+  options.ble_adv_fast_timeout = APP_ADV_FAST_TIMEOUT;
+  options.ble_adv_slow_enabled = true;
+  options.ble_adv_slow_interval = APP_ADV_SLOW_INTERVAL;
+  options.ble_adv_slow_timeout = APP_ADV_SLOW_TIMEOUT;
 
   err_code = ble_advertising_init(&advdata, NULL, &options, on_adv_evt, NULL);
   check_error(err_code);
@@ -385,6 +404,46 @@ static void adc_config(void) {
   nrf_drv_adc_channel_enable(&adc_channel_config);
 }
 
+/**
+ * @brief TWI events handler.
+ */
+void twi_handler(nrf_drv_twi_evt_t const * p_event, void * p_context)
+{
+    switch (p_event->type)
+    {
+        case NRF_DRV_TWI_EVT_DONE:
+            // if (p_event->xfer_desc.type == NRF_DRV_TWI_XFER_RX)
+            // {
+            //     data_handler(m_sample);
+            // }
+            // m_xfer_done = true;
+            break;
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief UART initialization.
+ */
+void twi_init (void)
+{
+    ret_code_t err_code;
+    
+    const nrf_drv_twi_config_t twi_config = {
+       .scl                = TWI_SCL_PIN,
+       .sda                = TWI_SDA_PIN,
+       .frequency          = NRF_TWI_FREQ_400K,
+       .interrupt_priority = APP_IRQ_PRIORITY_HIGH,
+       .clear_bus_init     = false
+    };
+
+    err_code = nrf_drv_twi_init(&m_twi, &twi_config, twi_handler, NULL);
+    check_error(err_code);
+
+    nrf_drv_twi_enable(&m_twi);
+}
+
 int main(void) {
   uint32_t err_code = 0;
 
@@ -421,8 +480,6 @@ int main(void) {
   err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
   check_error(err_code);
 
-  adc_buffer[0] = 1;
-
   // Battery ADC
   err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
   check_error(err_code);
@@ -435,7 +492,16 @@ int main(void) {
   }
   nrf_gpio_pin_set(LED_B);
 
+  // init twi
+  twi_init();
+
+  // init MPU6050
+  // while (twi_master_init() != true) {
+  //   nrf_gpio_pin_clear(LED_B);
+  // }
+
   while (true) {
+    app_sched_execute();
     power_manage();
   }
 }
