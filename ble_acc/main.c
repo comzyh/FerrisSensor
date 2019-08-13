@@ -23,11 +23,19 @@
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 
+#include "driver/mpu6050.h"
+
+typedef __uint8_t uint8_t;
+typedef __uint16_t uint16_t;
+typedef __uint32_t uint32_t;
+typedef __uint64_t uint64_t;
+
 const int LED_R = 17;
 const int LED_B = 19;
 const int LED_G = 18;
 
 const int LED_RGB[] = {17, 19, 18};
+const uint8_t mpu6050_device_address = 0x69; // SENSOR_PRO board
 
 const int CENTRAL_LINK_COUNT = 0;    /**< Number of central links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
@@ -35,7 +43,7 @@ const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the
                                         remember to adjust the RAM settings*/
 
 // TWI config
-#define TWI_INSTANCE_ID 1 // we are using TWI1
+#define TWI_INSTANCE_ID 0 // we are using TWI1
 const int TWI_SCL_PIN = 10;
 const int TWI_SDA_PIN = 9;
 
@@ -76,7 +84,7 @@ static ble_uuid_t m_adv_uuids[] = {
 static uint32_t last_error_code;
 static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID; /**< Handle of the current connection. */
 static ble_bas_t m_bas;
-static const nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
+static nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
 static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
 
 void check_error(volatile uint32_t err_code) {
@@ -407,41 +415,38 @@ static void adc_config(void) {
 /**
  * @brief TWI events handler.
  */
-void twi_handler(nrf_drv_twi_evt_t const * p_event, void * p_context)
-{
-    switch (p_event->type)
-    {
-        case NRF_DRV_TWI_EVT_DONE:
-            // if (p_event->xfer_desc.type == NRF_DRV_TWI_XFER_RX)
-            // {
-            //     data_handler(m_sample);
-            // }
-            // m_xfer_done = true;
-            break;
-        default:
-            break;
-    }
+void twi_handler(nrf_drv_twi_evt_t const *p_event, void *p_context) {
+  switch (p_event->type) {
+  case NRF_DRV_TWI_EVT_DONE:
+    // if (p_event->xfer_desc.type == NRF_DRV_TWI_XFER_RX)
+    // {
+    //     data_handler(m_sample);
+    // }
+    // m_xfer_done = true;
+    break;
+  default:
+    break;
+  }
 }
 
 /**
  * @brief UART initialization.
  */
-void twi_init (void)
-{
-    ret_code_t err_code;
-    
-    const nrf_drv_twi_config_t twi_config = {
-       .scl                = TWI_SCL_PIN,
-       .sda                = TWI_SDA_PIN,
-       .frequency          = NRF_TWI_FREQ_400K,
-       .interrupt_priority = APP_IRQ_PRIORITY_HIGH,
-       .clear_bus_init     = false
-    };
+void twi_init(void) {
+  ret_code_t err_code;
 
-    err_code = nrf_drv_twi_init(&m_twi, &twi_config, twi_handler, NULL);
-    check_error(err_code);
+  const nrf_drv_twi_config_t twi_config = {
+      .scl = TWI_SCL_PIN,
+      .sda = TWI_SDA_PIN,
+      .frequency = NRF_TWI_FREQ_400K,
+      .interrupt_priority = APP_IRQ_PRIORITY_HIGH,
+      .clear_bus_init = true,
+  };
 
-    nrf_drv_twi_enable(&m_twi);
+  err_code = nrf_drv_twi_init(&m_twi, &twi_config, twi_handler, NULL);
+  check_error(err_code);
+
+  nrf_drv_twi_enable(&m_twi);
 }
 
 int main(void) {
@@ -477,8 +482,8 @@ int main(void) {
   conn_params_init();
   nrf_gpio_pin_clear(LED_B);
 
-  err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
-  check_error(err_code);
+  // err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
+  // check_error(err_code);
 
   // Battery ADC
   err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
@@ -490,10 +495,21 @@ int main(void) {
     __WFE();
     __WFE();
   }
-  nrf_gpio_pin_set(LED_B);
 
   // init twi
   twi_init();
+  nrf_gpio_pin_clear(LED_G);
+
+  // init mpu6050
+  nrf_delay_ms(100);
+  while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
+    // nrf_gpio_pin_clear(LED_B);
+    // nrf_gpio_pin_clear(LED_B);
+    check_error(10);
+    nrf_gpio_pin_toggle(LED_G);
+  }
+
+  nrf_gpio_pin_set(LED_B);
 
   // init MPU6050
   // while (twi_master_init() != true) {

@@ -19,6 +19,7 @@ SRC_FILES += \
   $(SDK_ROOT)/components/drivers_nrf/uart/nrf_drv_uart.c \
   $(SDK_ROOT)/components/ble/ble_services/ble_bas/ble_bas.c \
   $(PROJ_DIR)/main.c \
+  $(PROJ_DIR)/driver/mpu6050.c \
   $(SDK_ROOT)/components/ble/common/ble_conn_params.c \
   $(SDK_ROOT)/components/ble/common/ble_conn_state.c \
   $(SDK_ROOT)/components/ble/common/ble_advdata.c \
