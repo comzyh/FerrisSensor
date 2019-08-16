@@ -24,6 +24,7 @@
 #include "nrf_log_ctrl.h"
 
 #include "driver/mpu6050.h"
+#include "services/ferris_service.h"
 
 typedef __uint8_t uint8_t;
 typedef __uint16_t uint16_t;
@@ -84,8 +85,10 @@ static ble_uuid_t m_adv_uuids[] = {
 static uint32_t last_error_code;
 static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID; /**< Handle of the current connection. */
 static ble_bas_t m_bas;
+static ferris_service_t m_ferris;
 static nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
 static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
+static uint8_t acc_data[6];
 
 void check_error(volatile uint32_t err_code) {
   if (err_code) {
@@ -310,6 +313,7 @@ static void gap_params_init(void) {
 static void services_init(void) {
   uint32_t err_code;
 
+  // battery service
   ble_bas_init_t bas_init;
   memset(&bas_init, 0, sizeof(bas_init));
 
@@ -324,6 +328,13 @@ static void services_init(void) {
   bas_init.evt_handler = NULL;
 
   err_code = ble_bas_init(&m_bas, &bas_init);
+  check_error(err_code);
+
+  // ferris service
+  ferris_service_init_t ferris_init;
+  ferris_init.p_acceleration_data = acc_data;
+
+  err_code = ferris_service_init(&m_ferris, &ferris_init);
   check_error(err_code);
 }
 
@@ -474,6 +485,21 @@ int main(void) {
   err_code = sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
   check_error(err_code);
 
+  // init twi
+  twi_init();
+  nrf_gpio_pin_clear(LED_G);
+
+  // init mpu6050
+  nrf_delay_ms(300);
+  while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
+    check_error(10);
+    nrf_gpio_pin_toggle(LED_G);
+  }
+
+  // nrf_gpio_pin_set(LED_B);
+  err_code = mpu6050_read_acceleration(acc_data);
+  check_error(err_code);
+
   // init gap_params
   gap_params_init();
   advertising_init();
@@ -496,20 +522,7 @@ int main(void) {
     __WFE();
   }
 
-  // init twi
-  twi_init();
-  nrf_gpio_pin_clear(LED_G);
-
-  // init mpu6050
-  nrf_delay_ms(100);
-  while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
-    check_error(10);
-    nrf_gpio_pin_toggle(LED_G);
-  }
-
-  // nrf_gpio_pin_set(LED_B);
   nrf_gpio_pin_set(LED_G);
-
 
   while (true) {
     app_sched_execute();

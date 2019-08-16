@@ -122,7 +122,7 @@ uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, u
   return nrf_drv_twi_rx(m_p_twi, m_device_address, destination, number_of_bytes);
 }
 
-uint32_t read_acc(uint8_t *dest) {
+uint32_t mpu6050_read_acceleration(uint8_t *dest) {
   return mpu6050_register_read(ACCEL_XOUT_H, dest, 6);
 }
 

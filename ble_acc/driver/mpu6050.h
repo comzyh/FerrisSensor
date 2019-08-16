@@ -43,10 +43,9 @@
 
 /*lint ++flb "Enter library region" */
 
+#include "nrf_drv_twi.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "nrf_drv_twi.h"
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,12 +98,13 @@ uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, u
 */
 bool mpu6050_verify_product_id(void);
 
+uint32_t mpu6050_read_acceleration(uint8_t *dest);
+
 /**
  *@}
  **/
 
 /*lint --flb "Leave library region" */
-
 
 #ifdef __cplusplus
 }
