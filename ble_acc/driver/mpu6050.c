@@ -42,6 +42,7 @@
 #include <stdint.h>
 
 #include "mpu6050.h"
+#include "mpu_reg.h"
 #include "nrf_drv_twi.h"
 
 typedef __uint8_t uint8_t;
@@ -73,9 +74,17 @@ bool mpu6050_init(nrf_drv_twi_t *p_twi, uint8_t device_address) {
   uint8_t reset_value = 0x04U | 0x02U | 0x01U; // Resets gyro, accelerometer and temperature sensor signal paths.
   ret_code = mpu6050_register_write(ADDRESS_SIGNAL_PATH_RESET, reset_value) == 0;
 
-  if (!ret_code != NRF_SUCCESS)
-    for (;;) {
-    }
+  if (!ret_code != NRF_SUCCESS) {
+    return ret_code;
+  }
+  // initialize MPU6050
+  ret_code |= mpu6050_register_write(SMPLRT_DIV, SAMPLE_50HZ);
+  ret_code |= mpu6050_register_write(CONFIG, DLPF_21HZ);
+  ret_code |= mpu6050_register_write(ACCEL_CONFIG, ACCEL_FS_2g);
+  ret_code |= mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX);
+  if (!ret_code != NRF_SUCCESS) {
+    return ret_code;
+  }
   // Read and verify product ID
   ret_code = mpu6050_verify_product_id();
 
@@ -111,6 +120,10 @@ uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, u
     return ret_code;
   }
   return nrf_drv_twi_rx(m_p_twi, m_device_address, destination, number_of_bytes);
+}
+
+uint32_t read_acc(uint8_t *dest) {
+  return mpu6050_register_read(ACCEL_XOUT_H, dest, 6);
 }
 
 /*lint --flb "Leave library region" */

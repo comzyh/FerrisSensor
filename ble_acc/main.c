@@ -482,8 +482,8 @@ int main(void) {
   conn_params_init();
   nrf_gpio_pin_clear(LED_B);
 
-  // err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
-  // check_error(err_code);
+  err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
+  check_error(err_code);
 
   // Battery ADC
   err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
@@ -503,18 +503,13 @@ int main(void) {
   // init mpu6050
   nrf_delay_ms(100);
   while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
-    // nrf_gpio_pin_clear(LED_B);
-    // nrf_gpio_pin_clear(LED_B);
     check_error(10);
     nrf_gpio_pin_toggle(LED_G);
   }
 
-  nrf_gpio_pin_set(LED_B);
+  // nrf_gpio_pin_set(LED_B);
+  nrf_gpio_pin_set(LED_G);
 
-  // init MPU6050
-  // while (twi_master_init() != true) {
-  //   nrf_gpio_pin_clear(LED_B);
-  // }
 
   while (true) {
     app_sched_execute();
