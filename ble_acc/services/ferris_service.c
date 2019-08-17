@@ -2,22 +2,17 @@
 #include "ble.h"
 #include "ble_gatts.h"
 
-// #include "ble_srv_common.h"
 #include <string.h>
 
 const ble_uuid128_t ferris_uuid = {{0x9e, 0x5e, 0xaa, 0xf7, 0x4d, 0x9c, 0x47, 0xdc, 0x93, 0xad, 0x2a, 0xf9, 0x5b, 0x6b, 0x22, 0xa2}};
 uint8_t char_acc_desc[] = "Acceleration raw data";
-uint32_t ferrris_add_acc_char(ferris_service_t *p_ferris_service) {
+uint32_t ferris_add_acc_char(ferris_service_t *p_ferris_service) {
 
   uint32_t err_code;
-  ble_gatts_attr_md_t cccd_md;
-  ble_gatts_char_md_t char_md;
-  ble_gatts_attr_md_t attr_md;
-  ble_uuid_t ble_uuid;
-  ble_gatts_attr_t attr_char_value;
 
   // CCCD metadata. Such as notification permission
 
+  ble_gatts_attr_md_t cccd_md;
   memset(&cccd_md, 0, sizeof(cccd_md));
 
   BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.read_perm);
@@ -27,15 +22,24 @@ uint32_t ferrris_add_acc_char(ferris_service_t *p_ferris_service) {
 
   // characteristic metadata
 
+  ble_gatts_char_md_t char_md;
   memset(&char_md, 0, sizeof(char_md));
   char_md.char_props.read = 1;
   char_md.char_props.notify = 1;
   char_md.p_char_user_desc = char_acc_desc;
   char_md.char_user_desc_max_size = sizeof(char_acc_desc);
   char_md.char_user_desc_size = sizeof(char_acc_desc);
+  // char_md.p_user_desc_md = &attr_md;
   char_md.p_cccd_md = &cccd_md;
 
+  // characteristic uuid
+
+  ble_uuid_t ble_uuid;
+  ble_uuid.type = p_ferris_service->uuid_type;
+  ble_uuid.uuid = 0x6050;
+
   // characteristic attrs. such as permission
+  ble_gatts_attr_md_t attr_md;
 
   memset(&attr_md, 0, sizeof(attr_md));
 
@@ -43,17 +47,14 @@ uint32_t ferrris_add_acc_char(ferris_service_t *p_ferris_service) {
   BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&attr_md.write_perm);
 
   attr_md.vloc = BLE_GATTS_VLOC_STACK;
+  attr_md.vloc = BLE_GATTS_VLOC_USER;
   attr_md.rd_auth = 0;
   attr_md.wr_auth = 0;
   attr_md.vlen = 1;
 
-  // characteristic uuid
-
-  ble_uuid.type = p_ferris_service->uuid_type;
-  ble_uuid.uuid = 0x6050;
-
   // characteristic value
 
+  ble_gatts_attr_t attr_char_value;
   memset(&attr_char_value, 0, sizeof(attr_char_value));
 
   attr_char_value.p_uuid = &ble_uuid;
@@ -90,6 +91,6 @@ uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_
   }
 
   // add characteristic
-  err_code = ferrris_add_acc_char(p_ferris_service);
+  err_code = ferris_add_acc_char(p_ferris_service);
   return err_code;
 }

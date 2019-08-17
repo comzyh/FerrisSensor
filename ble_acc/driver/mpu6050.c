@@ -50,13 +50,6 @@ typedef __uint16_t uint16_t;
 typedef __uint32_t uint32_t;
 typedef __uint64_t uint64_t;
 
-#define TWI_READ_BIT (0x01) //!< If this bit is set in the address field, transfer direction is from slave to master.
-
-#define TWI_ISSUE_STOP ((bool)true)       //!< Parameter for @ref twi_master_transfer
-#define TWI_DONT_ISSUE_STOP ((bool)false) //!< Parameter for @ref twi_master_transfer
-
-/*lint ++flb "Enter library region" */
-
 #define ADDRESS_WHO_AM_I (0x75U)          // !< WHO_AM_I register identifies the device. Expected value is 0x68.
 #define ADDRESS_SIGNAL_PATH_RESET (0x68U) // !<
 
@@ -64,37 +57,42 @@ static const uint8_t expected_who_am_i = 0x68U; // !< Expected value to get from
 static uint8_t m_device_address;                // !< Device address in bits [7:1]
 static nrf_drv_twi_t *m_p_twi;
 
+uint32_t check_retcode(uint32_t ret_code) {
+  if (ret_code != NRF_SUCCESS) {
+    // for (;;) {}
+  }
+  return ret_code;
+}
 bool mpu6050_init(nrf_drv_twi_t *p_twi, uint8_t device_address) {
   uint32_t ret_code;
 
   m_p_twi = p_twi;
   m_device_address = (uint8_t)(device_address << 1);
+  m_device_address = device_address;
 
   // Do a reset on signal paths
   uint8_t reset_value = 0x04U | 0x02U | 0x01U; // Resets gyro, accelerometer and temperature sensor signal paths.
-  ret_code = mpu6050_register_write(ADDRESS_SIGNAL_PATH_RESET, reset_value) == 0;
+  ret_code = mpu6050_register_write(ADDRESS_SIGNAL_PATH_RESET, reset_value);
 
-  if (!ret_code != NRF_SUCCESS) {
-    return ret_code;
+  if (ret_code != NRF_SUCCESS) {
+    return false;
   }
   // initialize MPU6050
-  ret_code |= mpu6050_register_write(SMPLRT_DIV, SAMPLE_50HZ);
-  ret_code |= mpu6050_register_write(CONFIG, DLPF_21HZ);
-  ret_code |= mpu6050_register_write(ACCEL_CONFIG, ACCEL_FS_2g);
-  ret_code |= mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX);
-  if (!ret_code != NRF_SUCCESS) {
-    return ret_code;
+  ret_code = check_retcode(mpu6050_register_write(SMPLRT_DIV, SAMPLE_50HZ));
+  ret_code = check_retcode(mpu6050_register_write(CONFIG, DLPF_21HZ));
+  ret_code = check_retcode(mpu6050_register_write(ACCEL_CONFIG, ACCEL_FS_2g));
+  ret_code = check_retcode(mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX));
+  if (ret_code != NRF_SUCCESS) {
+    return false;
   }
   // Read and verify product ID
-  ret_code = mpu6050_verify_product_id();
-
-  return ret_code == NRF_SUCCESS;
+  return mpu6050_verify_product_id();
 }
 
 bool mpu6050_verify_product_id(void) {
   uint8_t who_am_i;
 
-  if (mpu6050_register_read(ADDRESS_WHO_AM_I, &who_am_i, 1)) {
+  if (mpu6050_register_read(ADDRESS_WHO_AM_I, &who_am_i, 1) == NRF_SUCCESS) {
     if (who_am_i != expected_who_am_i) {
       return false;
     } else {
@@ -110,20 +108,20 @@ uint32_t mpu6050_register_write(uint8_t register_address, uint8_t value) {
 
   w2_data[0] = register_address;
   w2_data[1] = value;
-  return nrf_drv_twi_tx(m_p_twi, m_device_address, w2_data, 2, TWI_ISSUE_STOP);
+  return nrf_drv_twi_tx(m_p_twi, m_device_address, w2_data, 2, false);
 }
 
 uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, uint8_t number_of_bytes) {
-  uint32_t ret_code;
-  ret_code = nrf_drv_twi_tx(m_p_twi, m_device_address, &register_address, 1, TWI_DONT_ISSUE_STOP);
+  uint32_t ret_code = 0;
+  ret_code = nrf_drv_twi_tx(m_p_twi, m_device_address, &register_address, 1, false);
+
   if (ret_code != NRF_SUCCESS) {
     return ret_code;
   }
-  return nrf_drv_twi_rx(m_p_twi, m_device_address, destination, number_of_bytes);
+  ret_code = nrf_drv_twi_rx(m_p_twi, m_device_address, destination, number_of_bytes);
+  return ret_code;
 }
 
 uint32_t mpu6050_read_acceleration(uint8_t *dest) {
   return mpu6050_register_read(ACCEL_XOUT_H, dest, 6);
 }
-
-/*lint --flb "Leave library region" */

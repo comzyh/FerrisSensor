@@ -426,6 +426,7 @@ static void adc_config(void) {
 /**
  * @brief TWI events handler.
  */
+/*
 void twi_handler(nrf_drv_twi_evt_t const *p_event, void *p_context) {
   switch (p_event->type) {
   case NRF_DRV_TWI_EVT_DONE:
@@ -439,6 +440,7 @@ void twi_handler(nrf_drv_twi_evt_t const *p_event, void *p_context) {
     break;
   }
 }
+*/
 
 /**
  * @brief UART initialization.
@@ -454,7 +456,8 @@ void twi_init(void) {
       .clear_bus_init = true,
   };
 
-  err_code = nrf_drv_twi_init(&m_twi, &twi_config, twi_handler, NULL);
+  // when event_handler == NULL, enable blocking mode
+  err_code = nrf_drv_twi_init(&m_twi, &twi_config, NULL, NULL);
   check_error(err_code);
 
   nrf_drv_twi_enable(&m_twi);
@@ -470,6 +473,7 @@ int main(void) {
   for (int i = 0; i < 3; i++) {
     nrf_gpio_pin_set(LED_RGB[i]);
   }
+
   // enable adc
   adc_config();
 
@@ -483,21 +487,6 @@ int main(void) {
 
   // Enable internal DCDC to reduce power consumption
   err_code = sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
-  check_error(err_code);
-
-  // init twi
-  twi_init();
-  nrf_gpio_pin_clear(LED_G);
-
-  // init mpu6050
-  nrf_delay_ms(300);
-  while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
-    check_error(10);
-    nrf_gpio_pin_toggle(LED_G);
-  }
-
-  // nrf_gpio_pin_set(LED_B);
-  err_code = mpu6050_read_acceleration(acc_data);
   check_error(err_code);
 
   // init gap_params
@@ -521,6 +510,19 @@ int main(void) {
     __WFE();
     __WFE();
   }
+
+  // init twi
+  twi_init();
+  nrf_gpio_pin_clear(LED_G);
+
+  // init mpu6050
+  while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
+    check_error(10);
+    nrf_gpio_pin_toggle(LED_G);
+  }
+
+  err_code = mpu6050_read_acceleration(acc_data);
+  check_error(err_code);
 
   nrf_gpio_pin_set(LED_G);
 
