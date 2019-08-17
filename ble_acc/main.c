@@ -35,10 +35,10 @@ const int LED_R = 17;
 const int LED_B = 19;
 const int LED_G = 18;
 
-const int LED_RGB[] = {17, 19, 18};
+const int LED_RGB[]                  = {17, 19, 18};
 const uint8_t mpu6050_device_address = 0x69; // SENSOR_PRO board
 
-const int CENTRAL_LINK_COUNT = 0;    /**< Number of central links used by the application. When changing this number
+const int CENTRAL_LINK_COUNT    = 0; /**< Number of central links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
 const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the application. When changing this number
                                         remember to adjust the RAM settings*/
@@ -89,6 +89,7 @@ static ferris_service_t m_ferris;
 static nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
 static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
 static uint8_t acc_data[6];
+APP_TIMER_DEF(accel_timer_id); /**<  timer. */
 
 void check_error(volatile uint32_t err_code) {
   if (err_code) {
@@ -117,7 +118,7 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt) {
     // nrf_gpio_pin_toggle(LED_B);
     break;
   case BLE_ADV_EVT_IDLE:
-    check_error(10);
+    nrf_gpio_pin_set(LED_B);
     break; // BLE_ADV_EVT_IDLE
   default:
     break;
@@ -135,19 +136,19 @@ static void advertising_init(void) {
   // Build advertising data struct to pass into @ref ble_advertising_init.
   memset(&advdata, 0, sizeof(advdata));
 
-  advdata.name_type = BLE_ADVDATA_FULL_NAME;
-  advdata.include_appearance = true;
-  advdata.flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+  advdata.name_type               = BLE_ADVDATA_FULL_NAME;
+  advdata.include_appearance      = true;
+  advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
   advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
-  advdata.uuids_complete.p_uuids = m_adv_uuids;
+  advdata.uuids_complete.p_uuids  = m_adv_uuids;
 
   memset(&options, 0, sizeof(options));
-  options.ble_adv_fast_enabled = true;
+  options.ble_adv_fast_enabled  = true;
   options.ble_adv_fast_interval = APP_ADV_FAST_INTERVAL;
-  options.ble_adv_fast_timeout = APP_ADV_FAST_TIMEOUT;
-  options.ble_adv_slow_enabled = true;
+  options.ble_adv_fast_timeout  = APP_ADV_FAST_TIMEOUT;
+  options.ble_adv_slow_enabled  = true;
   options.ble_adv_slow_interval = APP_ADV_SLOW_INTERVAL;
-  options.ble_adv_slow_timeout = APP_ADV_SLOW_TIMEOUT;
+  options.ble_adv_slow_timeout  = APP_ADV_SLOW_TIMEOUT;
 
   err_code = ble_advertising_init(&advdata, NULL, &options, on_adv_evt, NULL);
   check_error(err_code);
@@ -206,7 +207,7 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
           auth_reply.type = BLE_GATTS_AUTHORIZE_TYPE_READ;
         }
         auth_reply.params.write.gatt_status = APP_FEATURE_NOT_SUPPORTED;
-        err_code = sd_ble_gatts_rw_authorize_reply(p_ble_evt->evt.gatts_evt.conn_handle,
+        err_code                            = sd_ble_gatts_rw_authorize_reply(p_ble_evt->evt.gatts_evt.conn_handle,
                                                    &auth_reply);
         APP_ERROR_CHECK(err_code);
       }
@@ -243,12 +244,12 @@ static void ble_evt_dispatch(ble_evt_t *p_ble_evt) {
 
   on_ble_evt(p_ble_evt);
   ble_advertising_on_ble_evt(p_ble_evt);
-  /*YOUR_JOB add calls to _on_ble_evt functions from each service your application is using
-       ble_xxs_on_ble_evt(&m_xxs, p_ble_evt);
-       ble_yys_on_ble_evt(&m_yys, p_ble_evt);
-     */
+
   // battery
   ble_bas_on_ble_evt(&m_bas, p_ble_evt);
+
+  // ferris
+  ferris_on_ble_evt(&m_ferris, p_ble_evt);
 }
 
 /**@brief Function for initializing the BLE stack.
@@ -301,8 +302,8 @@ static void gap_params_init(void) {
 
   gap_conn_params.min_conn_interval = MIN_CONN_INTERVAL;
   gap_conn_params.max_conn_interval = MAX_CONN_INTERVAL;
-  gap_conn_params.slave_latency = SLAVE_LATENCY;
-  gap_conn_params.conn_sup_timeout = CONN_SUP_TIMEOUT;
+  gap_conn_params.slave_latency     = SLAVE_LATENCY;
+  gap_conn_params.conn_sup_timeout  = CONN_SUP_TIMEOUT;
 
   err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
   check_error(err_code);
@@ -323,9 +324,9 @@ static void services_init(void) {
   BLE_GAP_CONN_SEC_MODE_SET_OPEN(&bas_init.battery_level_report_read_perm);
 
   bas_init.support_notification = false;
-  bas_init.initial_batt_level = 50;
-  bas_init.p_report_ref = NULL;
-  bas_init.evt_handler = NULL;
+  bas_init.initial_batt_level   = 50;
+  bas_init.p_report_ref         = NULL;
+  bas_init.evt_handler          = NULL;
 
   err_code = ble_bas_init(&m_bas, &bas_init);
   check_error(err_code);
@@ -373,14 +374,14 @@ static void conn_params_init(void) {
 
   memset(&cp_init, 0, sizeof(cp_init));
 
-  cp_init.p_conn_params = NULL;
+  cp_init.p_conn_params                  = NULL;
   cp_init.first_conn_params_update_delay = FIRST_CONN_PARAMS_UPDATE_DELAY;
-  cp_init.next_conn_params_update_delay = NEXT_CONN_PARAMS_UPDATE_DELAY;
-  cp_init.max_conn_params_update_count = MAX_CONN_PARAMS_UPDATE_COUNT;
-  cp_init.start_on_notify_cccd_handle = BLE_GATT_HANDLE_INVALID;
-  cp_init.disconnect_on_fail = false;
-  cp_init.evt_handler = on_conn_params_evt;
-  cp_init.error_handler = conn_params_error_handler;
+  cp_init.next_conn_params_update_delay  = NEXT_CONN_PARAMS_UPDATE_DELAY;
+  cp_init.max_conn_params_update_count   = MAX_CONN_PARAMS_UPDATE_COUNT;
+  cp_init.start_on_notify_cccd_handle    = BLE_GATT_HANDLE_INVALID;
+  cp_init.disconnect_on_fail             = false;
+  cp_init.evt_handler                    = on_conn_params_evt;
+  cp_init.error_handler                  = conn_params_error_handler;
 
   err_code = ble_conn_params_init(&cp_init);
   APP_ERROR_CHECK(err_code);
@@ -411,11 +412,11 @@ static void adc_event_handler(nrf_drv_adc_evt_t const *p_event) {
  */
 static void adc_config(void) {
   ret_code_t ret_code;
-  nrf_drv_adc_config_t config = NRF_DRV_ADC_DEFAULT_CONFIG;
+  nrf_drv_adc_config_t config                     = NRF_DRV_ADC_DEFAULT_CONFIG;
   static nrf_drv_adc_channel_t adc_channel_config = NRF_DRV_ADC_DEFAULT_CHANNEL(NRF_ADC_CONFIG_INPUT_DISABLED); //Get default ADC channel configuration
-  adc_channel_config.config.config.resolution = NRF_ADC_CONFIG_RES_8BIT;
-  adc_channel_config.config.config.input = NRF_ADC_CONFIG_SCALING_SUPPLY_ONE_THIRD;
-  adc_channel_config.config.config.reference = NRF_ADC_CONFIG_REF_VBG;
+  adc_channel_config.config.config.resolution     = NRF_ADC_CONFIG_RES_8BIT;
+  adc_channel_config.config.config.input          = NRF_ADC_CONFIG_SCALING_SUPPLY_ONE_THIRD;
+  adc_channel_config.config.config.reference      = NRF_ADC_CONFIG_REF_VBG;
 
   ret_code = nrf_drv_adc_init(&config, adc_event_handler);
   check_error(ret_code);
@@ -449,11 +450,11 @@ void twi_init(void) {
   ret_code_t err_code;
 
   const nrf_drv_twi_config_t twi_config = {
-      .scl = TWI_SCL_PIN,
-      .sda = TWI_SDA_PIN,
-      .frequency = NRF_TWI_FREQ_400K,
+      .scl                = TWI_SCL_PIN,
+      .sda                = TWI_SDA_PIN,
+      .frequency          = NRF_TWI_FREQ_400K,
       .interrupt_priority = APP_IRQ_PRIORITY_HIGH,
-      .clear_bus_init = true,
+      .clear_bus_init     = true,
   };
 
   // when event_handler == NULL, enable blocking mode
@@ -461,6 +462,38 @@ void twi_init(void) {
   check_error(err_code);
 
   nrf_drv_twi_enable(&m_twi);
+}
+
+void accel_timeout_handler(void *p_context) {
+  nrf_gpio_pin_toggle(LED_R);
+
+  check_error(mpu6050_read_acceleration(acc_data));
+
+  ferris_acceleration_send(&m_ferris);
+}
+
+void init_timer() {
+  uint32_t err_code;
+  err_code = app_timer_create(&accel_timer_id, APP_TIMER_MODE_REPEATED, accel_timeout_handler);
+  check_error(err_code);
+  // err_code = app_timer_create(&notify_timer, APP_TIMER_MODE_REPEATED,tempe_press_light_timeout_handler);
+  // check_error(err_code);
+}
+uint32_t accel_timer_start(void) {
+  return app_timer_start(accel_timer_id, APP_TIMER_TICKS(150, 0), NULL);
+}
+
+void battery_adc_sample() {
+  uint32_t err_code;
+  err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
+  check_error(err_code);
+
+  for (uint16_t i = 0; i < ADC_BUFFER_SIZE; i++) {
+    nrf_drv_adc_sample();
+    __SEV();
+    __WFE();
+    __WFE();
+  }
 }
 
 int main(void) {
@@ -495,21 +528,13 @@ int main(void) {
   services_init();
 
   conn_params_init();
-  nrf_gpio_pin_clear(LED_B);
+  nrf_gpio_pin_clear(LED_B); // advertising
 
   err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
   check_error(err_code);
 
   // Battery ADC
-  err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
-  check_error(err_code);
-
-  for (uint16_t i = 0; i < ADC_BUFFER_SIZE; i++) {
-    nrf_drv_adc_sample();
-    __SEV();
-    __WFE();
-    __WFE();
-  }
+  battery_adc_sample();
 
   // init twi
   twi_init();
@@ -522,6 +547,11 @@ int main(void) {
   }
 
   err_code = mpu6050_read_acceleration(acc_data);
+  check_error(err_code);
+
+  // init timer
+  init_timer();
+  err_code = accel_timer_start();
   check_error(err_code);
 
   nrf_gpio_pin_set(LED_G);

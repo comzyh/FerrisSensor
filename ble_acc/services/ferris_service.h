@@ -5,11 +5,14 @@
 #include <stdint.h>
 
 #include "ble_gatts.h"
+#include "ble.h"
 
 typedef struct {
   uint8_t uuid_type;       /**< UUID type for Ferris Service Base UUID. */
   uint16_t service_handle; /**< Handle of Ferris Service (as provided by the BLE stack). */
   ble_gatts_char_handles_t acc_char_handle;
+  uint16_t conn_handle;
+
   uint8_t *p_acceleration_data;
   bool acceleration_notification;
 
@@ -20,5 +23,9 @@ typedef struct {
 } ferris_service_init_t;
 
 uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_init_t *p_ferris_service_init);
+
+void ferris_on_ble_evt(ferris_service_t *p_nus, ble_evt_t *p_ble_evt);
+
+uint32_t ferris_acceleration_send(ferris_service_t * p_ferris_service);
 
 #endif
