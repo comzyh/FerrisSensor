@@ -48,5 +48,9 @@ flash_softdevice:
 	nrfjprog --program $(SDK_ROOT)/components/softdevice/s130/hex/s130_nrf51_2.0.1_softdevice.hex -f nrf51 --sectorerase 
 	nrfjprog --reset -f nrf51
 
+oflash: $(OUTPUT_DIRECTORY)/nrf51422_xxac.hex
+	@echo Flashing over OpenOCD: $<
+	expect openocd_flash.sh 127.0.0.1 4444 $(realpath $<)
+
 erase:
 	nrfjprog --eraseall -f nrf51
