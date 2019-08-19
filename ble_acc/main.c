@@ -57,10 +57,10 @@ const int TWI_SDA_PIN = 9;
 #define DEVICE_NAME "Ferris V0.1"               /**< Name of device. Will be included in the advertising data. */
 #define MANUFACTURER_NAME "NordicSemiconductor" /**< Manufacturer. Will be passed to Device Information Service. */
 
-#define APP_ADV_FAST_INTERVAL 80   /**< The advertising interval (in units of 0.625 ms. This value corresponds to 50 ms). */
-#define APP_ADV_SLOW_INTERVAL 3200 /**< Slow advertising interval (in units of 0.625 ms. This value corresponds to 2 seconds). */
-#define APP_ADV_FAST_TIMEOUT 30    /**< The duration of the fast advertising period (in seconds). */
-#define APP_ADV_SLOW_TIMEOUT 180   /**< The advertising timeout in units of seconds. */
+#define APP_ADV_FAST_INTERVAL 80       /**< The advertising interval (in units of 0.625 ms. This value corresponds to 50 ms). */
+#define APP_ADV_SLOW_INTERVAL 9600     /**< Slow advertising interval (in units of 0.625 ms. This value corresponds to 6 seconds). */
+#define APP_ADV_FAST_TIMEOUT 30        /**< The duration of the fast advertising period (in seconds). */
+#define APP_ADV_SLOW_TIMEOUT 24 * 3600 /**< The advertising timeout in units of seconds. */
 
 // Low frequency clock source to be used by the SoftDevice
 #define NRF_CLOCK_LFCLKSRC                                            \
@@ -170,9 +170,7 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
     NRF_LOG_INFO("Disconnected.\r\n");
 #ifdef DEBUG
     nrf_gpio_pin_set(LED_G);
-#endif
-    APP_ERROR_CHECK(err_code);
-    break; // BLE_GAP_EVT_DISCONNECTED
+#endif break; // BLE_GAP_EVT_DISCONNECTED
 
   case BLE_GAP_EVT_CONNECTED:
     NRF_LOG_INFO("Connected.\r\n");
@@ -239,6 +237,17 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
     break;
   }
 }
+static void mpu6050_on_ble_evt(ble_evt_t *p_ble_evt) {
+  switch (p_ble_evt->header.evt_id) {
+  case BLE_GAP_EVT_DISCONNECTED:
+    mpu6050_enter_sleep();
+    break;
+
+  case BLE_GAP_EVT_CONNECTED:
+    mpu6050_wake_up();
+    break;
+  }
+}
 
 /**@brief Function for dispatching a BLE stack event to all modules with a BLE stack event handler.
  *
@@ -262,6 +271,9 @@ static void ble_evt_dispatch(ble_evt_t *p_ble_evt) {
 
   // ferris
   ferris_on_ble_evt(&m_ferris, p_ble_evt);
+
+  // sensors
+  mpu6050_on_ble_evt(p_ble_evt);
 }
 
 /**@brief Function for initializing the BLE stack.
@@ -572,6 +584,7 @@ int main(void) {
   while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
     nrf_gpio_pin_toggle(LED_G);
   }
+  mpu6050_enter_sleep();
 
   err_code = mpu6050_read_acceleration(acc_data);
   check_error(err_code);

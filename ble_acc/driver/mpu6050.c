@@ -63,16 +63,16 @@ uint32_t check_retcode(uint32_t ret_code) {
   }
   return ret_code;
 }
+
 bool mpu6050_init(nrf_drv_twi_t *p_twi, uint8_t device_address) {
   uint32_t ret_code;
 
-  m_p_twi = p_twi;
-  m_device_address = (uint8_t)(device_address << 1);
+  m_p_twi          = p_twi;
   m_device_address = device_address;
 
   // Do a reset on signal paths
   uint8_t reset_value = 0x04U | 0x02U | 0x01U; // Resets gyro, accelerometer and temperature sensor signal paths.
-  ret_code = mpu6050_register_write(ADDRESS_SIGNAL_PATH_RESET, reset_value);
+  ret_code            = mpu6050_register_write(ADDRESS_SIGNAL_PATH_RESET, reset_value);
 
   if (ret_code != NRF_SUCCESS) {
     return false;
@@ -81,7 +81,14 @@ bool mpu6050_init(nrf_drv_twi_t *p_twi, uint8_t device_address) {
   ret_code = check_retcode(mpu6050_register_write(SMPLRT_DIV, SAMPLE_50HZ));
   ret_code = check_retcode(mpu6050_register_write(CONFIG, DLPF_21HZ));
   ret_code = check_retcode(mpu6050_register_write(ACCEL_CONFIG, ACCEL_FS_2g));
-  ret_code = check_retcode(mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX));
+  // MPU-6000 and MPU-6050 Register Map and Descriptions Revision 4.2 
+  // The MPU-60X0 can be put into Accelerometer Only Low Power Mode using the following steps:
+  // (i)   Set CYCLE bit to 1
+  // (ii)  Set SLEEP bit to 0
+  // (iii) Set TEMP_DIS bit to 1
+  // (iv)  Set STBY_XG, STBY_YG, STBY_ZG bits to 1
+  ret_code = check_retcode(mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX | TEMP_DIS | CYCLE));
+  ret_code = check_retcode(mpu6050_register_write(PWR_MGMT_2, gyroscope_STBY | LP_WAKE_CTRL_5));
   if (ret_code != NRF_SUCCESS) {
     return false;
   }
@@ -113,7 +120,7 @@ uint32_t mpu6050_register_write(uint8_t register_address, uint8_t value) {
 
 uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, uint8_t number_of_bytes) {
   uint32_t ret_code = 0;
-  ret_code = nrf_drv_twi_tx(m_p_twi, m_device_address, &register_address, 1, false);
+  ret_code          = nrf_drv_twi_tx(m_p_twi, m_device_address, &register_address, 1, false);
 
   if (ret_code != NRF_SUCCESS) {
     return ret_code;
@@ -124,4 +131,15 @@ uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, u
 
 uint32_t mpu6050_read_acceleration(uint8_t *dest) {
   return mpu6050_register_read(ACCEL_XOUT_H, dest, 6);
+}
+
+uint32_t mpu6050_enter_sleep() {
+  return mpu6050_register_write(PWR_MGMT_1, SLEEP);
+}
+uint32_t mpu6050_wake_up() {
+  return mpu6050_register_write(PWR_MGMT_1, CLKSEL_PllGyroX | TEMP_DIS | CYCLE);
+}
+
+uint32_t mpu6050_set_wake_up_freq(MPU6050_WAKEUP_FREQ freq) {
+  return mpu6050_register_write(PWR_MGMT_2, gyroscope_STBY | ((uint8_t)(freq & 0x3) << 6));
 }

@@ -51,6 +51,13 @@
 extern "C" {
 #endif
 
+typedef enum {
+  MPU6050_WAKEUP_1_25 = 0,
+  MPU6050_WAKEUP_5,
+  MPU6050_WAKEUP_20,
+  MPU6050_WAKEUP_40,
+} MPU6050_WAKEUP_FREQ;
+
 /** @file
 * @brief MPU6050 gyro/accelerometer driver.
 *
@@ -99,6 +106,10 @@ uint32_t mpu6050_register_read(uint8_t register_address, uint8_t *destination, u
 bool mpu6050_verify_product_id(void);
 
 uint32_t mpu6050_read_acceleration(uint8_t *dest);
+
+uint32_t mpu6050_enter_sleep();
+
+uint32_t mpu6050_wake_up();
 
 /**
  *@}

@@ -24,6 +24,7 @@ typedef enum {
   GYRO_ZOUT_L,
 
   PWR_MGMT_1 = 0x6B,
+  PWR_MGMT_2,
 
 } mpu_reg_address;
 
@@ -50,15 +51,25 @@ typedef enum {
 #define GYRO_FS_1000 (10)
 #define GYRO_FS_2000 (18)
 
+// PWR_MGMT_1
 //  it is highly recommended that the device be configured to use one of the gyroscopes (or an external clock source)
 //  as the clock reference for improved stability.
 #define CLKSEL_INTER8M (0)
 #define CLKSEL_PllGyroX (1)
 #define CLKSEL_PllGyroY (2)
 #define CLKSEL_PllGyroZ (3)
+#define TEMP_DIS (8)
+#define CYCLE (0x20)
+#define SLEEP (0x40)
 
-// PWR_MEMT_1
 #define WAKEUP (0x00)
-#define SLEEP (0x20)
+
+// PWR_MGMT2
+#define gyroscope_STBY (0x07)
+#define LP_WAKE_CTRL_1_25 (0x00)
+#define LP_WAKE_CTRL_5 (0x40)
+#define LP_WAKE_CTRL_20 (0x80)
+#define LP_WAKE_CTRL_40 (0xC0)
+
 
 #endif
