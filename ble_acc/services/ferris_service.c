@@ -7,9 +7,11 @@
 
 const ble_uuid128_t ferris_uuid = {{0x9e, 0x5e, 0xaa, 0xf7, 0x4d, 0x9c, 0x47, 0xdc, 0x93, 0xad, 0x2a, 0xf9, 0x5b, 0x6b, 0x22, 0xa2}};
 const uint16_t acc_data_len     = 6;
+#define sin5deg = 0.08715574274765817;
 
 const uint8_t char_acc_desc[]             = "Acceleration raw data, [-2G, 2G], in {X_H, X_L, Y_H, Y_L, Z_H, Z_L} format";
 const uint8_t char_sample_interval_desc[] = "Sample interval in ms.";
+const uint8_t char_battery_voltage_desc[] = "Battery voltage in mV.";
 
 // Acceleration characteristic
 uint32_t ferris_add_accel_char(ferris_service_t *p_ferris_service) {
@@ -76,7 +78,8 @@ uint32_t ferris_add_accel_char(ferris_service_t *p_ferris_service) {
 // Add normal value characteristic
 uint32_t ferris_add_normal_characteristic(ferris_service_t *p_ferris_service, ble_gatts_char_handles_t *p_handles,
                                           uint8_t *p_value, uint16_t value_len,
-                                          uint16_t uuid, const uint8_t *char_user_desc, uint16_t char_user_desc_size) {
+                                          uint16_t uuid, const uint8_t *char_user_desc, uint16_t char_user_desc_size,
+                                          bool readonly) {
 
   uint32_t err_code;
 
@@ -103,7 +106,11 @@ uint32_t ferris_add_normal_characteristic(ferris_service_t *p_ferris_service, bl
   memset(&attr_md, 0, sizeof(attr_md));
 
   BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
-  BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);
+  if (readonly) {
+    BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&attr_md.write_perm);
+  } else {
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);
+  }
 
   attr_md.vloc    = BLE_GATTS_VLOC_USER;
   attr_md.rd_auth = 0;
@@ -129,7 +136,9 @@ uint32_t ferris_add_normal_characteristic(ferris_service_t *p_ferris_service, bl
 uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_init_t *p_ferris_service_init) {
   uint32_t err_code;
   p_ferris_service->p_acceleration_data       = p_ferris_service_init->p_acceleration_data;
+  p_ferris_service->p_battery_voltage         = p_ferris_service_init->p_battery_voltage;
   p_ferris_service->acceleration_notification = false;
+  p_ferris_service->sample_interval           = 200;
 
   // Add a Vendor Specific base UUID.
   // Other uuids (both service and charistracter) are based on this uuid.
@@ -155,13 +164,38 @@ uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_
   }
 
   // add sample_interval
-  p_ferris_service->sample_interval = 200;
-  
   err_code = ferris_add_normal_characteristic(p_ferris_service, &(p_ferris_service->sample_interval_char_handle),
                                               (uint8_t *)(&p_ferris_service->sample_interval), 2,
                                               ((uint16_t)('I') << 8) + 'T',
-                                              char_sample_interval_desc, sizeof(char_sample_interval_desc));
-  return err_code;
+                                              char_sample_interval_desc, sizeof(char_sample_interval_desc), false);
+  if (err_code) {
+    return err_code;
+  }
+  // add battery voltage
+  if (p_ferris_service->p_battery_voltage != NULL) {
+    err_code = ferris_add_normal_characteristic(p_ferris_service, &(p_ferris_service->battery_voltage_handle),
+                                                (uint8_t *)(p_ferris_service->p_battery_voltage), 2,
+                                                ((uint16_t)('B') << 8) + 'V',
+                                                char_battery_voltage_desc, sizeof(char_battery_voltage_desc), true);
+    if (err_code) {
+
+      return err_code;
+    }
+  }
+
+  return 0;
+}
+void decode_acc(uint8_t *p_value, float *p_acc) {
+  for (int i = 0; i < 3; i++) {
+    p_acc[i] = ((float)((int16_t)uint16_big_decode(p_value + i * 2))) / 32768 * 20;
+  }
+}
+
+float cross_product_length(float U[3], float V[3]) {
+  float x = U[1] * V[2] - U[2] * V[1];
+  float y = U[2] * V[0] - V[2] * U[0];
+  float z = U[0] * V[1] - U[1] * V[0];
+  return x * x + y * y + z * z;
 }
 
 uint32_t ferris_acceleration_send(ferris_service_t *p_ferris_service) {
@@ -175,6 +209,30 @@ uint32_t ferris_acceleration_send(ferris_service_t *p_ferris_service) {
     return NRF_ERROR_INVALID_STATE;
   }
 
+  // Skip report if the rotated angle is too low
+  float acc[3];
+  decode_acc(p_ferris_service->p_acceleration_data, acc);
+  bool large_angle = cross_product_length(acc, p_ferris_service->last_report_acc) > 10 * 10 * 0.08715574274765817;
+
+  if (large_angle) {
+    // We send some more acceleration value after a big rotate
+    p_ferris_service->mandatory_report_remain = 4;
+  }
+
+  // We skip report if angle change is not large
+  if (p_ferris_service->mandatory_report_remain <= 0 && !large_angle && p_ferris_service->skiped_report < 5 * 10) {
+    p_ferris_service->skiped_report++;
+    return 0;
+  }
+
+  if (p_ferris_service->mandatory_report_remain) {
+    p_ferris_service->mandatory_report_remain--;
+  }
+  p_ferris_service->skiped_report = 0;
+
+  memcpy(p_ferris_service->last_report_acc, acc, sizeof(acc));
+
+  // send notification
   memset(&hvx_params, 0, sizeof(hvx_params));
 
   hvx_params.handle = p_ferris_service->acc_char_handle.value_handle;
@@ -216,13 +274,15 @@ static void on_write(ferris_service_t *p_ferris_service, ble_evt_t *p_ble_evt) {
       (p_evt_write->len == 2)) {
     if (ble_srv_is_notification_enabled(p_evt_write->data)) {
       p_ferris_service->acceleration_notification = true;
+      p_ferris_service->mandatory_report_remain   = 5;
+      p_ferris_service->skiped_report             = 0;
     } else {
       p_ferris_service->acceleration_notification = false;
     }
   } else if ( // sample_interval
       (p_evt_write->handle == p_ferris_service->sample_interval_char_handle.value_handle) &&
       (p_evt_write->len == 2)) {
-        p_ferris_service->sample_interval = *((uint16_t*)p_evt_write->data);
+    p_ferris_service->sample_interval = *((uint16_t *)p_evt_write->data);
   }
 }
 

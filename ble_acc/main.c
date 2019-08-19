@@ -31,6 +31,8 @@ typedef __uint16_t uint16_t;
 typedef __uint32_t uint32_t;
 typedef __uint64_t uint64_t;
 
+const uint16_t battery_level_voltage[] = {569, 606, 642, 676, 703, 722, 732, 740, 747, 753, 759, 764, 769, 773, 776, 780, 783, 785, 788, 790, 792, 794, 796, 798, 800, 801, 803, 804, 805, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 820, 821, 822, 823, 823, 824, 825, 825, 826, 827, 827, 828, 829, 829, 830, 830, 831, 831, 832, 833, 833, 834, 834, 835, 835, 836, 836, 837, 837, 838, 838, 839, 839, 840, 840, 841, 842, 842, 843, 843, 844, 844, 844, 845, 845, 845, 845, 846, 846, 846, 847, 847, 848, 849, 850, 851, 853, 876, 907, 937, 967, 996, 1023};
+
 const int LED_R = 17;
 const int LED_B = 19;
 const int LED_G = 18;
@@ -48,7 +50,7 @@ const int PERIPHERAL_LINK_COUNT = 1; /**< Number of peripheral links used by the
 const int TWI_SCL_PIN = 10;
 const int TWI_SDA_PIN = 9;
 
-#define ADC_BUFFER_SIZE 10
+#define ADC_BUFFER_SIZE 8
 
 #define APP_FEATURE_NOT_SUPPORTED BLE_GATT_STATUS_ATTERR_APP_BEGIN + 2 /**< Reply when unsupported features are requested. */
 
@@ -87,9 +89,15 @@ static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID; /**< Handle of the curr
 static ble_bas_t m_bas;
 static ferris_service_t m_ferris;
 static nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
-static nrf_adc_value_t adc_buffer[ADC_BUFFER_SIZE];
+
+// ADC for battery
+static nrf_drv_adc_channel_t battery_adc_channel = NRF_DRV_ADC_DEFAULT_CHANNEL(NRF_ADC_CONFIG_INPUT_DISABLED); //Get default ADC channel configuration;
+static nrf_adc_value_t battery_raw, adc_buffer[ADC_BUFFER_SIZE];
+static uint16_t battery_voltage;
 static uint8_t acc_data[6];
-APP_TIMER_DEF(accel_timer_id); /**<  timer. */
+// Define timer
+APP_TIMER_DEF(accel_timer_id);   /**<  acceleration timer. */
+APP_TIMER_DEF(battery_timer_id); /**<  battery timer. */
 
 void check_error(volatile uint32_t err_code) {
   if (err_code) {
@@ -160,13 +168,17 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
   switch (p_ble_evt->header.evt_id) {
   case BLE_GAP_EVT_DISCONNECTED:
     NRF_LOG_INFO("Disconnected.\r\n");
+#ifdef DEBUG
     nrf_gpio_pin_set(LED_G);
+#endif
     APP_ERROR_CHECK(err_code);
     break; // BLE_GAP_EVT_DISCONNECTED
 
   case BLE_GAP_EVT_CONNECTED:
     NRF_LOG_INFO("Connected.\r\n");
+#ifdef DEBUG
     nrf_gpio_pin_clear(LED_G);
+#endif
     m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
     break; // BLE_GAP_EVT_CONNECTED
 
@@ -334,6 +346,7 @@ static void services_init(void) {
   // ferris service
   ferris_service_init_t ferris_init;
   ferris_init.p_acceleration_data = acc_data;
+  ferris_init.p_battery_voltage   = &battery_voltage;
 
   err_code = ferris_service_init(&m_ferris, &ferris_init);
   check_error(err_code);
@@ -393,17 +406,32 @@ static void power_manage(void) {
   check_error(err_code);
 }
 
+void update_battery(uint16_t raw) {
+  uint8_t level = 0;
+  for (; level < sizeof(battery_level_voltage) / sizeof(uint16_t) && battery_level_voltage[level] <= raw; level++)
+    ;
+  ble_bas_battery_level_update(&m_bas, level);
+  battery_voltage = raw * 3600.0 / 1024;
+}
+
+void battery_adc_sample() {
+  uint32_t err_code;
+  err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
+  check_error(err_code);
+}
+
 /**
  * @brief ADC interrupt handler.
  */
 static void adc_event_handler(nrf_drv_adc_evt_t const *p_event) {
   if (p_event->type == NRF_DRV_ADC_EVT_DONE) {
-
     int sum = 0;
     for (int i = 0; i < p_event->data.done.size; i++) {
       sum += p_event->data.done.p_buffer[i];
     }
-    ble_bas_battery_level_update(&m_bas, sum / p_event->data.done.size);
+    sum /= p_event->data.done.size;
+    battery_raw = sum;
+    update_battery(sum);
   }
 }
 
@@ -412,16 +440,12 @@ static void adc_event_handler(nrf_drv_adc_evt_t const *p_event) {
  */
 static void adc_config(void) {
   ret_code_t ret_code;
-  nrf_drv_adc_config_t config                     = NRF_DRV_ADC_DEFAULT_CONFIG;
-  static nrf_drv_adc_channel_t adc_channel_config = NRF_DRV_ADC_DEFAULT_CHANNEL(NRF_ADC_CONFIG_INPUT_DISABLED); //Get default ADC channel configuration
-  adc_channel_config.config.config.resolution     = NRF_ADC_CONFIG_RES_8BIT;
-  adc_channel_config.config.config.input          = NRF_ADC_CONFIG_SCALING_SUPPLY_ONE_THIRD;
-  adc_channel_config.config.config.reference      = NRF_ADC_CONFIG_REF_VBG;
+  nrf_drv_adc_config_t config = NRF_DRV_ADC_DEFAULT_CONFIG;
 
   ret_code = nrf_drv_adc_init(&config, adc_event_handler);
   check_error(ret_code);
 
-  nrf_drv_adc_channel_enable(&adc_channel_config);
+  nrf_drv_adc_channel_enable(&battery_adc_channel);
 }
 
 /**
@@ -465,35 +489,35 @@ void twi_init(void) {
 }
 
 void accel_timeout_handler(void *p_context) {
+#ifdef DEBUG
   nrf_gpio_pin_toggle(LED_R);
+#endif
 
   check_error(mpu6050_read_acceleration(acc_data));
 
   ferris_acceleration_send(&m_ferris);
+}
+void battery_timeout_handler(void *p_context) {
+  if (!nrf_drv_adc_is_busy()) {
+    battery_adc_sample();
+  }
+  nrf_drv_adc_sample();
 }
 
 void init_timer() {
   uint32_t err_code;
   err_code = app_timer_create(&accel_timer_id, APP_TIMER_MODE_REPEATED, accel_timeout_handler);
   check_error(err_code);
-  // err_code = app_timer_create(&notify_timer, APP_TIMER_MODE_REPEATED,tempe_press_light_timeout_handler);
-  // check_error(err_code);
-}
-uint32_t accel_timer_start(void) {
-  return app_timer_start(accel_timer_id, APP_TIMER_TICKS(150, 0), NULL);
-}
-
-void battery_adc_sample() {
-  uint32_t err_code;
-  err_code = nrf_drv_adc_buffer_convert(adc_buffer, ADC_BUFFER_SIZE);
+  err_code = app_timer_create(&battery_timer_id, APP_TIMER_MODE_REPEATED, battery_timeout_handler);
   check_error(err_code);
+}
 
-  for (uint16_t i = 0; i < ADC_BUFFER_SIZE; i++) {
-    nrf_drv_adc_sample();
-    __SEV();
-    __WFE();
-    __WFE();
-  }
+uint32_t accel_timer_start(void) {
+  return app_timer_start(accel_timer_id, APP_TIMER_TICKS(200, 0), NULL);
+}
+
+uint32_t battery_timer_start(void) {
+  return app_timer_start(battery_timer_id, APP_TIMER_TICKS(2000, 0), NULL);
 }
 
 int main(void) {
@@ -508,6 +532,9 @@ int main(void) {
   }
 
   // enable adc
+  battery_adc_channel.config.config.resolution = NRF_ADC_CONFIG_RES_10BIT;
+  battery_adc_channel.config.config.input      = NRF_ADC_CONFIG_SCALING_SUPPLY_ONE_THIRD;
+  battery_adc_channel.config.config.reference  = NRF_ADC_CONFIG_REF_VBG;
   adc_config();
 
   err_code = NRF_LOG_INIT(NULL);
@@ -534,15 +561,15 @@ int main(void) {
   check_error(err_code);
 
   // Battery ADC
-  battery_adc_sample();
+  nrf_drv_adc_sample_convert(&battery_adc_channel, &battery_raw);
+  update_battery(battery_raw);
 
   // init twi
   twi_init();
-  nrf_gpio_pin_clear(LED_G);
+  nrf_gpio_pin_set(LED_G);
 
   // init mpu6050
   while (!mpu6050_init(&m_twi, mpu6050_device_address)) {
-    check_error(10);
     nrf_gpio_pin_toggle(LED_G);
   }
 
@@ -554,7 +581,13 @@ int main(void) {
   err_code = accel_timer_start();
   check_error(err_code);
 
+  err_code = battery_timer_start();
+  check_error(err_code);
+
   nrf_gpio_pin_set(LED_G);
+#ifndef DEBUG
+  nrf_gpio_pin_toggle(LED_B);
+#endif
 
   while (true) {
     app_sched_execute();
