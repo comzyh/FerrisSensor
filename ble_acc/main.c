@@ -54,13 +54,13 @@ const int TWI_SDA_PIN = 9;
 
 #define APP_FEATURE_NOT_SUPPORTED BLE_GATT_STATUS_ATTERR_APP_BEGIN + 2 /**< Reply when unsupported features are requested. */
 
-#define DEVICE_NAME "Ferris V0.1"               /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME "Ferris V0.11"               /**< Name of device. Will be included in the advertising data. */
 #define MANUFACTURER_NAME "NordicSemiconductor" /**< Manufacturer. Will be passed to Device Information Service. */
 
 #define APP_ADV_FAST_INTERVAL 80       /**< The advertising interval (in units of 0.625 ms. This value corresponds to 50 ms). */
-#define APP_ADV_SLOW_INTERVAL 9600     /**< Slow advertising interval (in units of 0.625 ms. This value corresponds to 6 seconds). */
+#define APP_ADV_SLOW_INTERVAL 4800     /**< Slow advertising interval (in units of 0.625 ms. This value corresponds to 3 seconds). */
 #define APP_ADV_FAST_TIMEOUT 30        /**< The duration of the fast advertising period (in seconds). */
-#define APP_ADV_SLOW_TIMEOUT 24 * 3600 /**< The advertising timeout in units of seconds. */
+#define APP_ADV_SLOW_TIMEOUT 48* 3600 /**< The advertising timeout in units of seconds. */
 
 // Low frequency clock source to be used by the SoftDevice
 #define NRF_CLOCK_LFCLKSRC                                            \
@@ -122,9 +122,7 @@ void check_error(volatile uint32_t err_code) {
 static void on_adv_evt(ble_adv_evt_t ble_adv_evt) {
   switch (ble_adv_evt) {
   case BLE_ADV_EVT_FAST:
-    // NRF_LOG_INFO("Fast advertising\r\n");
-    // nrf_gpio_pin_toggle(LED_B);
-    break;
+    break; // BLE_ADV_EVT_FAST
   case BLE_ADV_EVT_IDLE:
     nrf_gpio_pin_set(LED_B);
     break; // BLE_ADV_EVT_IDLE
@@ -167,22 +165,22 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
 
   switch (p_ble_evt->header.evt_id) {
   case BLE_GAP_EVT_DISCONNECTED:
-    NRF_LOG_INFO("Disconnected.\r\n");
 #ifdef DEBUG
     nrf_gpio_pin_set(LED_G);
-#endif break; // BLE_GAP_EVT_DISCONNECTED
+#endif
+    ble_advertising_start(BLE_ADV_MODE_SLOW);
+    break; // BLE_GAP_EVT_DISCONNECTED
 
   case BLE_GAP_EVT_CONNECTED:
-    NRF_LOG_INFO("Connected.\r\n");
 #ifdef DEBUG
     nrf_gpio_pin_clear(LED_G);
 #endif
     m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
+    ble_advertising_start(BLE_ADV_MODE_IDLE);
     break; // BLE_GAP_EVT_CONNECTED
 
   case BLE_GATTC_EVT_TIMEOUT:
     // Disconnect on GATT Client timeout event.
-    NRF_LOG_DEBUG("GATT Client Timeout.\r\n");
     err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle,
                                      BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     APP_ERROR_CHECK(err_code);
@@ -190,7 +188,6 @@ static void on_ble_evt(ble_evt_t *p_ble_evt) {
 
   case BLE_GATTS_EVT_TIMEOUT:
     // Disconnect on GATT Server timeout event.
-    NRF_LOG_DEBUG("GATT Server Timeout.\r\n");
     err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gatts_evt.conn_handle,
                                      BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     APP_ERROR_CHECK(err_code);
@@ -303,6 +300,7 @@ static void ble_stack_init(void) {
   err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch);
   check_error(err_code);
 }
+
 /**@brief Function for the GAP initialization.
  *
  * @details This function sets up all the necessary GAP (Generic Access Profile) parameters of the
@@ -420,8 +418,9 @@ static void power_manage(void) {
 
 void update_battery(uint16_t raw) {
   uint8_t level = 0;
-  for (; level < sizeof(battery_level_voltage) / sizeof(uint16_t) && battery_level_voltage[level] <= raw; level++)
-    ;
+  while(level < sizeof(battery_level_voltage) / sizeof(uint16_t) && battery_level_voltage[level] <= raw) {
+    level ++;
+  };
   ble_bas_battery_level_update(&m_bas, level);
   battery_voltage = raw * 3600.0 / 1024;
 }

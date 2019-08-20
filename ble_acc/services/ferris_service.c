@@ -37,7 +37,6 @@ uint32_t ferris_add_accel_char(ferris_service_t *p_ferris_service) {
   char_md.p_char_user_desc        = (uint8_t *)char_acc_desc;
   char_md.char_user_desc_max_size = sizeof(char_acc_desc);
   char_md.char_user_desc_size     = sizeof(char_acc_desc);
-  // char_md.p_user_desc_md = &attr_md;
   char_md.p_cccd_md = &cccd_md;
 
   // characteristic uuid
@@ -57,7 +56,7 @@ uint32_t ferris_add_accel_char(ferris_service_t *p_ferris_service) {
   attr_md.vloc    = BLE_GATTS_VLOC_USER;
   attr_md.rd_auth = 0;
   attr_md.wr_auth = 0;
-  attr_md.vlen    = 1;
+  attr_md.vlen    = 0;
 
   // characteristic value
 
@@ -79,7 +78,7 @@ uint32_t ferris_add_accel_char(ferris_service_t *p_ferris_service) {
 uint32_t ferris_add_normal_characteristic(ferris_service_t *p_ferris_service, ble_gatts_char_handles_t *p_handles,
                                           uint8_t *p_value, uint16_t value_len,
                                           uint16_t uuid, const uint8_t *char_user_desc, uint16_t char_user_desc_size,
-                                          bool readonly) {
+                                          bool readonly, uint8_t format) {
 
   uint32_t err_code;
 
@@ -89,10 +88,17 @@ uint32_t ferris_add_normal_characteristic(ferris_service_t *p_ferris_service, bl
   memset(&char_md, 0, sizeof(char_md));
   char_md.char_props.read         = 1;
   char_md.char_props.notify       = 0;
-  char_md.char_props.write        = 1;
+  char_md.char_props.write        = readonly ? 0 : 1;
   char_md.p_char_user_desc        = (uint8_t *)char_user_desc;
   char_md.char_user_desc_max_size = char_user_desc_size;
   char_md.char_user_desc_size     = char_user_desc_size;
+
+  ble_gatts_char_pf_t char_pf;
+  memset(&char_pf, 0, sizeof(char_pf));
+  if (format != 0) {
+    char_pf.format    = format;
+    char_md.p_char_pf = &char_pf;
+  }
 
   // characteristic uuid
 
@@ -167,7 +173,8 @@ uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_
   err_code = ferris_add_normal_characteristic(p_ferris_service, &(p_ferris_service->sample_interval_char_handle),
                                               (uint8_t *)(&p_ferris_service->sample_interval), 2,
                                               ((uint16_t)('I') << 8) + 'T',
-                                              char_sample_interval_desc, sizeof(char_sample_interval_desc), false);
+                                              char_sample_interval_desc, sizeof(char_sample_interval_desc), false,
+                                              BLE_GATT_CPF_FORMAT_UINT16);
   if (err_code) {
     return err_code;
   }
@@ -176,7 +183,8 @@ uint32_t ferris_service_init(ferris_service_t *p_ferris_service, ferris_service_
     err_code = ferris_add_normal_characteristic(p_ferris_service, &(p_ferris_service->battery_voltage_handle),
                                                 (uint8_t *)(p_ferris_service->p_battery_voltage), 2,
                                                 ((uint16_t)('B') << 8) + 'V',
-                                                char_battery_voltage_desc, sizeof(char_battery_voltage_desc), true);
+                                                char_battery_voltage_desc, sizeof(char_battery_voltage_desc), true,
+                                                BLE_GATT_CPF_FORMAT_UINT16);
     if (err_code) {
 
       return err_code;
