@@ -48,7 +48,8 @@
  */
 
 #include <stdint.h>
-#include "boards.h"
+// #include "boards.h"
+#include "nrf_gpio.h"
 #include "nrf_mbr.h"
 #include "nrf_bootloader.h"
 #include "nrf_bootloader_app_start.h"
@@ -58,6 +59,16 @@
 #include "app_error.h"
 #include "app_error_weak.h"
 #include "nrf_bootloader_info.h"
+
+#define BUTTON1 30
+#define BUTTON2 28
+
+#define FERRIS_BOOTLOADER_BUTTON BUTTON1
+const int LED_R = 17;
+const int LED_B = 19;
+const int LED_G = 18;
+
+const int LED_RGB[] = {17, 19, 18};
 
 void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
 {
@@ -77,8 +88,11 @@ void app_error_handler_bare(uint32_t error_code)
  */
 static void leds_init(void)
 {
-    bsp_board_leds_init();
-    bsp_board_led_on(BSP_BOARD_LED_2);
+  for (int i = 17; i <= 19; i++) {
+    nrf_gpio_cfg_output(i);
+    nrf_gpio_pin_set(i);
+  }
+  nrf_gpio_pin_clear(LED_G);
 }
 
 
@@ -86,8 +100,8 @@ static void leds_init(void)
  */
 static void buttons_init(void)
 {
-    nrf_gpio_cfg_sense_input(BOOTLOADER_BUTTON,
-                             BUTTON_PULL,
+    nrf_gpio_cfg_sense_input(FERRIS_BOOTLOADER_BUTTON,
+                             NRF_GPIO_PIN_PULLUP,
                              NRF_GPIO_PIN_SENSE_LOW);
 }
 
